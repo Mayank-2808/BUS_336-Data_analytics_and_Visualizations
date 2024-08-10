@@ -1,0 +1,226 @@
+---
+title: "Assignment 3"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(mosaic)
+library(formatR)
+library(leaps)
+library(dplyr)
+library(caTools)
+library(ggplot2)
+library(ROCR)
+```
+
+# PART 1: Model Building
+
+```{r}
+# Load the data
+data <- read.csv('./Student_Dropout.csv')
+
+# Preparing data for our analysis (We delete studentID from our data as it is not necessary and causes ambiguity)
+data = select(data, -c("StudentID")) 
+str(data)
+```
+
+# a)
+
+```{r}
+# Total number of students
+total_students <- nrow(data)
+
+# Percentage of dropouts
+dropouts_per <- mean(data$Dropout) * 100
+
+cat("Total number of students:", total_students, "\n")
+cat("Percentage of students who dropped out:", dropouts_per, "%\n")
+```
+
+# b)
+
+```{r}
+# We need to get Age of students in order to build a suitable regression model
+data <- mutate(data, BirthYear = 2024 - BirthYear)
+names(data)[names(data) == "BirthYear"] <- "Age"
+```
+
+```{r}
+# Splitting the data into training (75%) and testing (25%) sets
+set.seed(1000)
+split = sample.split(data$Dropout, SplitRatio = 0.75)
+
+train <- subset(data, split == TRUE)
+test <- subset(data, split == FALSE)
+```
+
+```{r}
+# Building a best-fit logistic regression model to predict the variable Dropout
+model_log <- glm(Dropout ~ ., data = train, family = "binomial")
+best_model = step(model_log)
+```
+
+```{r}
+summary(best_model)
+```
+
+
+# c)
+
+  We can see that the variable CreditsCompleted has been eliminated from the model by using step(). We see intriguing findings in our model, such as the coefficients of Age (≈ 0.058), Scholarship (≈ −1.27), and PartTimeYes (≈ 0.413) which show that older students have a higher dropout rate, students who get scholarships have a lower dropout rate and part time students also tend to have a higher drop out rate. In our model, the three variables MajorFCAT, MajorHSCI, and GPA are the only ones that are not significant considering a 95% confidence interval. The remaining ones are all significant.
+
+# d)
+
+  The coefficient of the GPA variable in our model is -0.216, which means that for each one-unit increase in GPA, the log-odds of dropping out decreases by ≈ 0.216, holding all other variables constant. Furthermore, it can be expressed in terms of odds: e^(-0.216) ≈ 0.806. It may be observed that (0.806 ∗ 100) − 100 = −19.4. Thus, assuming all other variables remain constant, the probabilities of dropping out reduce by approximately 19.4% for every unit rise in GPA. Hence, higher GPAs equate into a lower chance of dropping out. But we should be cautious while dealing with the GPA variable as it is not a significant predictor in our model.
+
+# e)
+
+```{r}
+val_pred <- data.frame(Gender = "Male", Age = 23, Major = "BUS", GPA = 3.1, CreditsCompleted = 100, PartTime = "No", Scholarship = "Yes")
+
+pred_value <- predict(best_model, val_pred, type = "response")
+cat("Predicted value of Dropout:", pred_value, "\n")
+```
+
+According to our model, this person has a 6% chance of dropping out.
+
+# PART 2: Model Performance on Training Dataset
+
+# a)
+
+```{r}
+# Calculating predicted probabilities for training set
+predicted_train <- predict(best_model, type = "response")
+
+# Combining the train and predict_train dataset
+train <- cbind(train, predicted_train)
+
+# Creating confusion matrix
+confusion_matrix <- table(train$Dropout, train$predicted_train > 0.5)
+print(confusion_matrix)
+```
+```{r}
+# Calculating specificity, sensitivity, and accuracy
+specificity <- confusion_matrix[1,1] / (confusion_matrix[1,1] + confusion_matrix[1,2])
+sensitivity <- confusion_matrix[2,2] / (confusion_matrix[2,2] + confusion_matrix[2,1])
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+cat("Specificity:", specificity, "\n")
+cat("Sensitivity:", sensitivity, "\n")
+cat("Accuracy:", accuracy, "\n")
+```
+
+# b)
+
+```{r}
+# Prediction function
+ROC_curve_pred = prediction(predicted_train, train$Dropout)
+
+# Performance function
+ROC_curve_perf = performance(ROC_curve_pred, "tpr", "fpr")
+
+# Plotting ROC with colors and adding threshold labels
+plot(ROC_curve_perf, main = "ROC Curve", colorize = TRUE, print.cutoffs.at = seq(0, 1, by = 0.05), text.adj = c(-0.2, 1.7))
+```
+
+```{r}
+# Training Set AUC
+AUC <- as.numeric(performance(ROC_curve_pred, "auc")@y.values)
+
+cat("AUC value:", AUC, "\n")
+```
+
+  It should be noted that the institution seeks to identify students who are at a high risk of leaving school early in the given situation. Finding more students who are likely to drop out is thus our top focus. Therefore, we may choose True Positive Rate above False Positive Rate. In light of that, choosing the threshold value of 0.35 makes sense.
+
+# c)
+
+```{r}
+# creating confusion matrix 2
+confusion_matrix2 <- table(train$Dropout, train$predicted_train > 0.35)
+print(confusion_matrix2)
+```
+
+```{r}
+# Calculating specificity, sensitivity, and accuracy
+specificity <- confusion_matrix2[1,1] / (confusion_matrix2[1,1] + confusion_matrix2[1,2])
+sensitivity <- confusion_matrix2[2,2] / (confusion_matrix2[2,2] + confusion_matrix2[2,1])
+accuracy <- sum(diag(confusion_matrix2)) / sum(confusion_matrix2)
+
+cat("Specificity:", specificity, "\n")
+cat("Sensitivity:", sensitivity, "\n")
+cat("Accuracy:", accuracy, "\n")
+```
+
+# PART 3: Performance Evaluation on Testing Dataset
+
+# a)
+
+```{r}
+# Calculating predicted probabilities for testing set
+predicted_test <- predict(best_model, newdata = test, type = "response")
+
+# Combining the train and predictTrain dataset
+test <- cbind(test, predicted_test)
+
+# Creating confusion matrix 3
+confusion_matrix3 <- table(test$Dropout, test$predicted_test > 0.35)
+print(confusion_matrix3)
+```
+
+```{r}
+# Calculating specificity, sensitivity, and accuracy
+specificity <- confusion_matrix3[1,1] / (confusion_matrix3[1,1] + confusion_matrix3[1,2])
+sensitivity <- confusion_matrix3[2,2] / (confusion_matrix3[2,2] + confusion_matrix3[2,1])
+accuracy <- sum(diag(confusion_matrix3)) / sum(confusion_matrix3)
+
+cat("Specificity:", specificity, "\n")
+cat("Sensitivity:", sensitivity, "\n")
+cat("Accuracy:", accuracy, "\n")
+```
+
+# b)
+
+```{r}
+# Creating the baseline model
+test %>% group_by(Dropout) %>% summarise(n = n())
+```
+
+Accuracy of the baseline model = (751+0) / 1106 ≈ 0.679.
+
+This means that our baseline model accurately predicts for about 67.9% of the dataset. The accuracy for our model was ≈ 69.6%, hence our model improves over this simple model.
+
+# c)
+
+```{r}
+# Prediction function
+ROC_curve_pred = prediction(predicted_test, test$Dropout)
+
+# Performance function
+ROC_curve_perf = performance(ROC_curve_pred, "tpr", "fpr")
+
+# Plotting ROC with colors and adding threshold labels
+plot(ROC_curve_perf, main = "ROC Curve", colorize = TRUE, print.cutoffs.at = seq(0, 1, by = 0.05), text.adj = c(-0.2, 1.7))
+```
+
+```{r}
+# Testing Set AUC
+AUC <- as.numeric(performance(ROC_curve_pred, "auc")@y.values)
+
+cat("AUC value:", AUC, "\n")
+```
+
+  This indicates that our model does significantly better than random guessing, the AUC value of 0.765 indicates that there is a 76.5% chance that the model will correctly differentiate between a randomly chosen student who drops out and a randomly chosen student who does not.
+
+# d)
+
+  Yes, the model is useful to SFU because it offers a more balanced approach by detecting a higher proportion of students who are considered to be at-risk while retaining a respectable degree of precision and specificity. Early intervention initiatives to support students who are at risk of dropping out can be aided by it for SFU. The following factors can be considered:
+
+(i) AUC (Area Under the Curve): The model performs much better than random guessing, with an AUC of around 0.765, which is far higher than 0.5. This indicates that there is a 76.5% probability that the model will accurately distinguish between a randomly selected student who drops out and a randomly selected student who does not.
+
+(ii) Accuracy: The model's accuracy of 69.6% is higher than that of the baseline model, which was 67.9%. This suggests that generally, our model predicts more accurately than the baseline model.
+
+(iii) Sensitivity: Compared to the baseline model's 0% sensitivity, the model's 67% sensitivity is a significant increase. The algorithm is now considerably more adept at detecting students who are at risk of dropping out because to this improvement in sensitivity.
+
+(iv) Specificity: Compared to the baseline's 100%, the model's specificity is 70.8%. The specificity is still very high, despite the decline, guaranteeing that the majority of students who were expected to continue in school do so.
+
+  The sensitivity greatly rises with only a minor drop in accuracy when the threshold is changed. This modification is essential because it enables the model to recognise more students who are at danger of dropping out, which is consistent with SFU's objective of proactively identifying and assisting these students.
